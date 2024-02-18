@@ -317,3 +317,78 @@ exports.dashboard = onCall(async (request) => {
         achievements: userData.achievements || []
     };
 });
+
+exports.friendsQuest = onCall(async (request) => {
+    // const uid = "GX43pWHcR5ChcN3lcFVvzSnsffWz"
+    const uid = request.auth.uid;
+    try {
+        if (!uid || uid.trim() === "") {
+            throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated with a non-empty UID.');
+        }
+        const userDoc = await admin.firestore().collection("users").doc(uid).get();
+        if (!userDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'User not found.');
+        }
+        logger.info()
+        let userData = userDoc.data()
+        let entries = []
+        let streak = 0
+        let smoked = 0
+            for (let i = 0; i <= 6; i++) {
+                let dayString = DateTime.now().setZone('Asia/Almaty').startOf('day').minus({ days: i }).toISODate();
+                entryDoc = await admin.firestore().collection("users").doc(uid).collection("smokeFreeDays").doc(dayString).get()
+                if (entryDoc.exists) {
+                    entry = entryDoc.data()
+                    if (entry.cigarettesSmoked === 0) {
+                        streak += 1
+                        smoked = 0
+                    } else {
+                        streak = 0
+                        smoked += entry.cigarettesSmoked
+                    }
+                }
+              }
+            entries.push({
+                "name": userData.name,
+                "smoked": smoked,
+                "streak": streak
+            })
+        const friendPromises = userData.friends.map(async friendRef => {
+            friendDoc = await friendRef.get();
+            if (!friendDoc.exists) {
+                throw new functions.https.HttpsError('not-found', 'friend not found.');
+            }
+            friendData = friendDoc.data()
+            // generate list of dates 
+            // 2024-02-    -7 days
+            let streak = 0
+            let smoked = 0
+            for (let i = 0; i <= 6; i++) {
+                let dayString = DateTime.now().setZone('Asia/Almaty').startOf('day').minus({ days: i }).toISODate();
+                entryDoc = await friendRef.collection("smokeFreeDays").doc(dayString).get()
+                if (entryDoc.exists) {
+                    entry = entryDoc.data()
+                    logger.info(entry)
+                    if (entry.cigarettesSmoked === 0) {
+                        streak += 1
+                        smoked = 0
+                    } else {
+                        streak = 0
+                        smoked += entry.cigarettesSmoked
+                    }
+                }
+              }
+            entries.push({
+                "name": friendData.name,
+                "smoked": smoked,
+                "streak": streak
+            })
+            
+        });
+        await Promise.all(friendPromises);
+        return {success: true, message: entries}
+    } catch (error) {
+        logger.error(`Error handling friends quest request ${uid}:`, error);
+        throw new functions.https.HttpsError('internal', 'Error handling quest.', error);
+    }
+});
