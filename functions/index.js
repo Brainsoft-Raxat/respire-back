@@ -254,10 +254,10 @@ exports.handleInvitation = onCall(async (request) => {
 });
 
 
-exports.dashboard = functions.https.onCall(async (data, context) => {
-    // const uid = context.auth.uid;
-    const uid = "1eXKKjiCqcuf9w77RrM7RT9MSCIq";
-    const type = data.type || "year"; // Default to "year" if not specified
+exports.dashboard = onCall(async (request) => {
+    const uid = request.auth.uid;
+    // const uid = "1eXKKjiCqcuf9w77RrM7RT9MSCIq";
+    const type = request.data.type || "year"; // Default to "year" if not specified
 
     if (!uid) {
         throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
