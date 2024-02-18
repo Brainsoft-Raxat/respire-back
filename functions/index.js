@@ -3,6 +3,8 @@ const functions = require('firebase-functions');
 const logger = require("firebase-functions/logger");
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
+const { user } = require("firebase-functions/v1/auth");
+const { DateTime } = require('luxon');
 
 admin.initializeApp();
 
@@ -17,8 +19,8 @@ exports.createNewUser = functions.auth.user().onCreate((user) => {
     logger.log(`Creating new user with ${user.email}`);
 
     // Get current time for quitDate
-    const timestamp = new Date();
-    timestamp.setHours(0, 0, 0, 0);
+    const almatyMidnight = DateTime.now().setZone('Asia/Almaty').startOf('day');
+    const timestamp = almatyMidnight.toJSDate();
 
     const userData = {
         email: user.email, // The email of the user.
@@ -30,6 +32,7 @@ exports.createNewUser = functions.auth.user().onCreate((user) => {
         quitDate: timestamp, // Store quitDate as Firestore Timestamp
         friends: [],
         invitations: [],
+        achievements: ["First Step"],
         streak: 0
     };
 
@@ -46,11 +49,11 @@ exports.createNewUser = functions.auth.user().onCreate((user) => {
 
     const firstDayData = {
         cigarettesSmoked: 0,
-        date: timestamp, // Store current date as Firestore Timestamp
+        date: timestamp, // Store current date as Firestore Timestampnew
         uid: userRef, // Directly storing UID as string for simplicity
     }
 
-    const dateStr = timestamp.toISOString().split('T')[0];
+    const dateStr = almatyMidnight.toISODate();
     // Assuming you want to track each user's smoke-free days in a subcollection under their user document
     admin.firestore().collection('users').doc(user.uid).collection('smokeFreeDays').doc(dateStr).set(firstDayData)
         .then(() => {
@@ -71,8 +74,11 @@ exports.dailyStreakAndEntryUpdate = functions.pubsub.schedule('*/5 * * * *')
             return;
         }
 
-        const yesterdayString = new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().slice(0, 10);
-        const todayString = new Date().toISOString().slice(0, 10);
+        // Create a date in the 'Asia/Almaty' time zone for "yesterday"
+        const yesterdayString = DateTime.now().setZone('Asia/Almaty').startOf('day').minus({ days: 1 }).toISODate();
+
+        // Create a date in the 'Asia/Almaty' time zone for "today"
+        const todayString = DateTime.now().setZone('Asia/Almaty').startOf('day').toISODate();
 
         const updates = [];
 
@@ -180,8 +186,8 @@ exports.handleInvitation = onCall(async (request) => {
     // const uid = "ycLTl1pRYPrXaJ0EjXjPrInHmqba"
     const accept = request.data.accept
 
-     // Check if friendId is provided, not null, and not an empty string
-     if (!friendId || friendId.trim() === "") {
+    // Check if friendId is provided, not null, and not an empty string
+    if (!friendId || friendId.trim() === "") {
         throw new functions.https.HttpsError('invalid-argument', 'The function must be called with a non-empty "friendId".');
     }
 
@@ -245,4 +251,69 @@ exports.handleInvitation = onCall(async (request) => {
         logger.error('Error handling invitation:', error);
         throw new functions.https.HttpsError('internal', 'Error handling invitation.', error);
     }
+});
+
+
+exports.dashboard = functions.https.onCall(async (data, context) => {
+    // const uid = context.auth.uid;
+    const uid = "1eXKKjiCqcuf9w77RrM7RT9MSCIq";
+    const type = data.type || "year"; // Default to "year" if not specified
+
+    if (!uid) {
+        throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
+    }
+
+    // Calculate start date based on the type (year, month, week)
+    const almatyMidnight = DateTime.now().setZone('Asia/Almaty').startOf('day');
+    const startDate = almatyMidnight.toJSDate();
+    switch (type) {
+        case "year":
+            startDate.setFullYear(startDate.getFullYear() - 1);
+            break;
+        case "month":
+            startDate.setMonth(startDate.getMonth() - 1);
+            break;
+        case "week":
+            startDate.setDate(startDate.getDate() - 7);
+            break;
+        default:
+            // Default to "year" if an unknown type is provided
+            startDate.setFullYear(startDate.getFullYear() - 1);
+            break;
+    }
+    startDate.setHours(0, 0, 0, 0); // Set time to the start of the day
+
+    // Firestore range query
+    const smokeFreeDaysRef = admin.firestore().collection("users").doc(uid).collection("smokeFreeDays");
+    const smokeFreeDaysSnapshot = await smokeFreeDaysRef
+        .where("date", ">=", startDate)
+        .get();
+
+    let totalSmokedCigarettes = 0;
+    let totalSmokeFreeDays = 0;
+    let moneySaved = 0;
+    const pricePerPack = 500; // Assuming 500 tenge per pack
+    const cigarettesPerPack = 20;
+
+    smokeFreeDaysSnapshot.docs.forEach(doc => {
+        const { cigarettesSmoked } = doc.data();
+        totalSmokedCigarettes += cigarettesSmoked;
+        if (cigarettesSmoked === 0) {
+            totalSmokeFreeDays += 1;
+        }
+        // Assuming the user saves money for each cigarette not smoked
+        moneySaved += (cigarettesPerPack - cigarettesSmoked) * (pricePerPack / cigarettesPerPack);
+    });
+
+    // Assuming userData contains streak and achievements
+    const userDoc = await admin.firestore().collection("users").doc(uid).get();
+    const userData = userDoc.data() || {};
+
+    return {
+        totalSmokedCigarettes,
+        totalSmokeFreeDays,
+        moneySaved: `${moneySaved.toFixed(2)} ₸`,
+        streak: userData.streak || 0,
+        achievements: userData.achievements || []
+    };
 });
