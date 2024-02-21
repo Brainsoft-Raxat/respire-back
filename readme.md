@@ -78,3 +78,7 @@ firebase deploy --only functions:functionName
 `friendsQuest`
 * Trigger: Callable
 * Purpose: Aggregates data on a user and their friends' smoking cessation progress over the past week.
+
+
+## Mobile (Client) side
+* Here's the mobile application: https://github.com/aidanakalimbekova/respire-mobile
