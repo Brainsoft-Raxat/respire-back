@@ -78,7 +78,8 @@ exports.dailyStreakAndEntryUpdate = functions.pubsub.schedule('*/5 * * * *')
         const yesterdayString = DateTime.now().setZone('Asia/Almaty').startOf('day').minus({ days: 1 }).toISODate();
 
         // Create a date in the 'Asia/Almaty' time zone for "today"
-        const todayString = DateTime.now().setZone('Asia/Almaty').startOf('day').toISODate();
+        const today = DateTime.now().setZone('Asia/Almaty').startOf('day')
+        const todayString = today.toISODate();
 
         const updates = [];
 
@@ -91,7 +92,7 @@ exports.dailyStreakAndEntryUpdate = functions.pubsub.schedule('*/5 * * * *')
                 if (!todayDoc.exists) {
                     updates.push(admin.firestore().collection('users').doc(userId).collection('smokeFreeDays').doc(todayString).set({
                         cigarettesSmoked: 0,
-                        date: todayString,
+                        date: today.toJSDate(),
                     }));
                 } else {
                     logger.log(`Entry for today (${todayString}) already exists for user ${userId}. Skipping.`);
